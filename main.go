@@ -1,19 +1,19 @@
 package main
 
 import (
-	"flag"
-	"io/ioutil"
-	"log"
 	"bytes"
-	"os/exec"
-	"strconv"
-	"strings"
-  "net/http"
+	"encoding/json"
+	"flag"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"encoding/json"
 	nmap "github.com/tomsteele/go-nmap"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os/exec"
+	"strconv"
+	"strings"
 )
 
 func check_root() {
