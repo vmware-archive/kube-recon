@@ -1,16 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
-	nmap "github.com/tomsteele/go-nmap"
-	"io/ioutil"
 	"log"
-	"net/http"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -47,25 +40,52 @@ func exec_command_wrapper(name string, args ...string) string {
 }
 
 type KubeRecon struct {
-	ip_addresses map[string][]int
+	ip_addresses map[string]bool
 }
 
 func newKubeRecon() *KubeRecon {
-	ips := map[string][]int{}
+	ips := map[string]bool{}
 	return &KubeRecon{ips}
 }
 
-func (k *KubeRecon) install_prerequisite() {
-	exec_command_wrapper("apt", "update")
-	exec_command_wrapper("apt", "install", "-y", "curl", "tcpdump", "nmap")
-	exec_command_wrapper("curl", "-LO", "https://storage.googleapis.com/kubernetes-release/release/v1.11.0/bin/linux/amd64/kubectl")
-	exec_command_wrapper("chmod", "+x", "./kubectl")
-	exec_command_wrapper("mv", "./kubectl", "/usr/local/bin/kubectl")
+func (k* KubeRecon) get_ip_addr() {
+	log.Printf("Getting local ip address and subnet")
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		log.Fatal(err)
+	}
+	// handle err
+	for _, i := range ifaces {
+	    addrs, err := i.Addrs()
+		if err != nil {
+			log.Fatal(err)
+		}
+	    if (i.Flags & net.FlagLoopback) == net.FlagLoopback {
+	    	continue
+		}
+	    // handle err
+	    for _, addr := range addrs {
+	        var ip net.IP
+	        switch v := addr.(type) {
+	        case *net.IPNet:
+	                ip = v.IP
+	        case *net.IPAddr:
+	                ip = v.IP
+	        }
+	        if ip.To4() != nil && !(strings.HasPrefix(ip.String(), "172")) {
+				k.ip_addresses[ip.String() + "/24"] = true
+			}
+	        // process IP address
+	    }
+	}
 }
 
 func (k *KubeRecon) test_rbac() {
 	log.Printf("Testing K8S API permissions")
-	stdouterr, err := exec.Command("kubectl", "get", "pods").CombinedOutput()
+	exec_command_wrapper("curl", "-LO", "https://storage.googleapis.com/kubernetes-release/release/v1.11.0/bin/linux/amd64/kubectl")
+	exec_command_wrapper("chmod", "+x", "./kubectl")
+	// exec_command_wrapper("mv", "./kubectl", "/usr/local/bin/kubectl")
+	stdouterr, err := exec.Command("./kubectl", "get", "pods").CombinedOutput()
 	if err != nil {
 		log.Print("Your K8S API Server is configured properlly")
 	} else {
@@ -75,123 +95,44 @@ func (k *KubeRecon) test_rbac() {
 		for _, row := range lines[1 : len(lines)-1] {
 			ip := strings.Split(row, " ")[0]
 			log.Printf("%s", ip)
-			k.ip_addresses[ip] = []int{}
+			k.ip_addresses[ip] = true
 		}
-	}
-}
-
-func (k *KubeRecon) query_arp() {
-	log.Printf("Querying ARP Table for IPs:")
-	output, err := ioutil.ReadFile("/proc/net/arp")
-	if err != nil {
-		panic(err)
-	}
-	lines := strings.Split(string(output), "\n")
-	for _, row := range lines[1 : len(lines)-1] {
-		ip := strings.Split(row, " ")[0]
-		log.Printf("%s", ip)
-	}
-}
-
-func (k *KubeRecon) sniff_network(timeout int) {
-	log.Printf("Sniffing network to get IPs for %d seconds", timeout)
-	exec_command_wrapper("tcpdump", "-i", "any", "-w", "capture.pcap", "-G", strconv.Itoa(timeout), "-W", "1")
-	handle, err := pcap.OpenOffline("capture.pcap")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer handle.Close()
-
-	// Loop through packets in file
-	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-	for packet := range packetSource.Packets() {
-		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		if ipLayer != nil {
-			ip, _ := ipLayer.(*layers.IPv4)
-
-			k.ip_addresses[ip.SrcIP.String()] = []int{}
-			k.ip_addresses[ip.DstIP.String()] = []int{}
-		}
-	}
-	log.Print("Found following IPS while sniffing:")
-	for ip := range k.ip_addresses {
-		log.Print(ip)
 	}
 }
 
 func (k *KubeRecon) nmap() {
 	log.Print("Running Nmap on the discovered IPs")
+	k.get_ip_addr()
 	for ip := range k.ip_addresses {
-		exec_command_wrapper("nmap", "--host-timeout", "10", "-oX", "scan.xml", ip)
-		output, err := ioutil.ReadFile("scan.xml")
-		if err != nil {
-			panic(err)
-		}
-
-		nmap_run, err := nmap.Parse(output)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		for _, host := range nmap_run.Hosts {
-			log.Printf("Open ports for hostname: %s", host.Addresses[0].Addr)
-			for _, port := range host.Ports {
-				p := strconv.Itoa(port.PortId)
-				log.Printf("%s", p)
-			}
-		}
-	}
-}
-
-func (k *KubeRecon) swagger_search() {
-	log.Print("Looking for swagger documentation files")
-	for ip := range k.ip_addresses {
-		var url = "http://" + ip + "/swagger.json"
-		resp, err := http.Get(url)
-		if err == nil {
-			log.Printf("Found swagger documentation at %s:", url)
-			defer resp.Body.Close()
-			body, _ := ioutil.ReadAll(resp.Body)
-			var out bytes.Buffer
-			json.Indent(&out, body, "", "    ")
-			log.Print(out.String())
-		}
+		output := exec_command_wrapper("nmap",
+									  "-p", "[1-65535]",
+										   "--script", "http-swagger.nse",
+										   "--script", "cassandra-brute",
+										   "--script", "http-brute",
+										   "--script", "http-proxy-brute",
+										   "--script", "ms-sql-brute",
+										   "--script", "mysql-brute",
+										   "--script", "pgsql-brute",
+										   "--script", "mongodb-brute",
+										   ip)
+		log.Printf(output)
 	}
 }
 
 func (k *KubeRecon) run() {
 
-	skip_prerequisite := flag.Bool("skip-prerequisite", false, "Skip installing prerequisite on the system")
 	skip_rbac := flag.Bool("skip-rbac", false, "Skip RBAC test")
-	skip_arp := flag.Bool("skip-arp", false, "Skip ARP query")
-	skip_sniffer := flag.Bool("skip-sniffer", false, "Skip network sniffer")
-	skip_nmap := flag.Bool("skip-nmap", false, "Skip NMAP scab")
-	skip_swagger := flag.Bool("skip-swagger", false, "Skip Swagger search")
-	sniffer_timeout := flag.Int("sniffer-timeout", 10, "Number of seconds to sniff network")
+	skip_nmap := flag.Bool("skip-nmap", false, "Skip NMAP scan")
 
 	flag.Parse()
+	// check_root()
 
-	check_root()
-
-	if !*skip_prerequisite {
-		k.install_prerequisite()
-	}
 	if !*skip_rbac {
 		k.test_rbac()
-	}
-	if !*skip_arp {
-		k.query_arp()
-	}
-	if !*skip_sniffer {
-		k.sniff_network(*sniffer_timeout)
 	}
 
 	if !*skip_nmap {
 		k.nmap()
-	}
-
-	if !*skip_swagger {
-		k.swagger_search()
 	}
 
 }
