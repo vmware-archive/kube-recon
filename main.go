@@ -4,29 +4,12 @@ import (
 	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os/exec"
-	"strconv"
 	"strings"
 )
 
-func check_root() {
-	cmd := exec.Command("id", "-u")
-	output, err := cmd.Output()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	i, err := strconv.Atoi(string(output[:len(output)-1]))
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if i != 0 {
-		log.Fatal("This program must be run as root! (sudo)")
-	}
-}
+const torExitNode string = "103.1.206.100"
 
 func exec_command_wrapper(name string, args ...string) string {
 	log.Printf("Running %s %s", name, strings.Join(args, " "))
@@ -119,10 +102,24 @@ func (k *KubeRecon) nmap() {
 	}
 }
 
+func (k * KubeRecon) test_tor_exit_nodes() {
+	log.Print("Testing connection to Tor exit node")
+	resp, err := http.Get("http://" + torExitNode)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	if resp.StatusCode == 200 {
+		log.Print("Established connection to Tor Node Successfully")
+	} else {
+		log.Print("Connection to Tor Node was blocked")
+	}
+}
+
 func (k *KubeRecon) run() {
 
 	skip_rbac := flag.Bool("skip-rbac", false, "Skip RBAC test")
 	skip_nmap := flag.Bool("skip-nmap", false, "Skip NMAP scan")
+	skip_tor := flag.Bool("skip-tor", false, "Skip TOR test")
 
 	flag.Parse()
 	// check_root()
@@ -133,6 +130,10 @@ func (k *KubeRecon) run() {
 
 	if !*skip_nmap {
 		k.nmap()
+	}
+
+	if !*skip_tor {
+		k.test_tor_exit_nodes()
 	}
 
 }
