@@ -65,8 +65,6 @@ func (k* KubeRecon) get_ip_addr() {
 
 func (k *KubeRecon) test_rbac() {
 	log.Printf("Testing K8S API permissions")
-	exec_command_wrapper("curl", "-LO", "https://storage.googleapis.com/kubernetes-release/release/v1.11.0/bin/linux/amd64/kubectl")
-	exec_command_wrapper("chmod", "+x", "./kubectl")
 	// exec_command_wrapper("mv", "./kubectl", "/usr/local/bin/kubectl")
 	stdouterr, err := exec.Command("./kubectl", "get", "pods").CombinedOutput()
 	if err != nil {

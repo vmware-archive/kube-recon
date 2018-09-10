@@ -1,10 +1,18 @@
 # Reconnaissance Test for Kubernetes
 
-
 The purpose of this tool is to gather maximum information from a pod inside kubernetes cluster.
 
 The output report shows pods/services that are visible and accessible to help better understand where security is
 not tight enough
+
+## Running
+
+You can run the tool via already build docker which you deploy inside the cluster or install
+the prerequisite and run the tool directly on an already running pod. The recommended way is to run the docker
+
+
+## Docker
+
 
 ## Development
 
@@ -71,8 +79,3 @@ Output:
 2018/07/15 10:37:50 Open ports for hostname: 35.190.66.65
 2018/07/15 10:37:50 Running nmap --host-timeout 10 -oX scan.xml 34.225.99.46
 ```
-
-## TODO
-* Currently the tool assumes a pod running ubuntu. Create a more "cross-distribution" pacakge (get rid of apt-get commands in the tool).
-* Improve Network Sniffer parsing. Add Protocol Detection & Parsing capabilities.
-* Tests.
