@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-const torExitNode string = "103.1.206.100"
 
 func exec_command_wrapper(name string, args ...string) string {
 	log.Printf("Running %s %s", name, strings.Join(args, " "))
@@ -100,16 +99,16 @@ func (k *KubeRecon) nmap() {
 	}
 }
 
-func (k * KubeRecon) test_tor_exit_nodes() {
-	log.Print("Testing connection to Tor exit node")
-	resp, err := http.Get("http://" + torExitNode)
+func (k * KubeRecon) test_eicar_file() {
+	log.Print("Trying to download EICAR file")
+	resp, err := http.Get("https://www.eicar.org/download/eicar.com.txt")
 	if err != nil {
 		log.Fatalln(err)
 	}
 	if resp.StatusCode == 200 {
-		log.Print("Established connection to Tor Node Successfully")
+		log.Print("Downloaded EICAR successfully. No malware protection is in place")
 	} else {
-		log.Print("Connection to Tor Node was blocked")
+		log.Print("EICAR download was blocked. Malware protection is in place")
 	}
 }
 
@@ -117,7 +116,7 @@ func (k *KubeRecon) run() {
 
 	skip_rbac := flag.Bool("skip-rbac", false, "Skip RBAC test")
 	skip_nmap := flag.Bool("skip-nmap", false, "Skip NMAP scan")
-	skip_tor := flag.Bool("skip-tor", false, "Skip TOR test")
+	skip_eicar := flag.Bool("skip-eicar", false, "Skip EICAR test")
 
 	flag.Parse()
 	// check_root()
@@ -130,8 +129,8 @@ func (k *KubeRecon) run() {
 		k.nmap()
 	}
 
-	if !*skip_tor {
-		k.test_tor_exit_nodes()
+	if !*skip_eicar {
+		k.test_eicar_file()
 	}
 
 }
